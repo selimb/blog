@@ -3,6 +3,9 @@ name = "blog"
 version = "0"
 description = ""
 authors = ["Selim Belhaouane <selim.belhaouane@gmail.com>"]
+packages = [
+    { include = "papyrus", from = "lib" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
