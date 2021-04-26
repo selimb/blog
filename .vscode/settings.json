@@ -1,5 +1,8 @@
 {
     "python.formatting.provider": "black",
     "python.linting.mypyEnabled": true,
-    "python.linting.pylintEnabled": true
+    "python.linting.pylintEnabled": true,
+    "restructuredtext.confPath": "${workspaceFolder}\\source",
+    // For restructuredtext extension
+    "python.pythonPath": "${env:PYTHON}"
 }
