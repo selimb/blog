@@ -1,4 +1,3 @@
-
 """
 Hacks for debugging/introspecting Jinja2 templates.
 
@@ -18,48 +17,50 @@ The debug toolbar HTML currently relies on TailwindCSS and AlpineJS.
 
 **Configuration**
 
-``jinja_hazmat_enabled``
+``jinja_detective_enabled``
     Whether to enable the debug toolbar.
 
-``jinja_hazmat_insert_before``
+``jinja_detective_insert_before``
     The HTML for the debug toolbar will be inserted before this string.
 """
 from __future__ import annotations
-import logging
-import itertools
+
 import dataclasses
+import itertools
+import logging
+import traceback
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
-import traceback
-import sphinx.application
-import sphinx.config
-import sphinx.jinja2glue
-import sphinx.builders
+
 import jinja2.environment
 import jinja2.loaders
+import sphinx.application
+import sphinx.builders
+import sphinx.config
+import sphinx.jinja2glue
 
 PACKAGE_DIR = Path(__file__).parent
 RENDERED_CONTEXT_ATTR = "rendered_ctx"
-JINJA_HAZMAT_ENABLED = "jinja_hazmat_enabled"
-JINJA_HAZMAT_INSERT_BEFORE = "jinja_hazmat_insert_before"
-JINJA_HAZMAT_TEMPLATE_NAME = "jinja_hazmat.html"
+JINJA_DETECTIVE_ENABLED = "jinja_detective_enabled"
+JINJA_DETECTIVE_INSERT_BEFORE = "jinja_detective_insert_before"
+JINJA_DETECTIVE_TEMPLATE_NAME = "jinja_detective.html"
 
 logger = logging.getLogger(__name__)
 
 
 def setup(app: sphinx.application.Sphinx) -> None:
-    app.add_config_value(JINJA_HAZMAT_ENABLED, default=False, rebuild="html", types=[bool])
-    app.add_config_value(JINJA_HAZMAT_INSERT_BEFORE, default="</body>", rebuild="html", types=[str])
-    app.connect("config-inited", on_config_inited)
+    app.add_config_value(JINJA_DETECTIVE_ENABLED, default=False, rebuild="html", types=[bool])
+    app.add_config_value(JINJA_DETECTIVE_INSERT_BEFORE, default="</body>", rebuild="html", types=[str])
+    app.connect("config-inited", cb_config_inited)
     # XXX temporary
     app.add_css_file("https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css")
     app.add_js_file("https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.x.x/dist/alpine.min.js")
 
 
-def on_config_inited(app: sphinx.application.Sphinx, config: sphinx.config.Config) -> None:
-    if config[JINJA_HAZMAT_ENABLED]:
+def cb_config_inited(app: sphinx.application.Sphinx, config: sphinx.config.Config) -> None:
+    if config[JINJA_DETECTIVE_ENABLED]:
         config["template_bridge"] = _get_class_import_string(DebugTemplateLoader)
-        config["templates_path"].append(str(PACKAGE_DIR / "templates"))
+        config["templates_path"].append(str(PACKAGE_DIR / "templates"))  # type: ignore
 
 
 @dataclasses.dataclass
@@ -75,39 +76,48 @@ class DebugTemplateLoader(sphinx.jinja2glue.BuiltinTemplateLoader):
     #: - ``parent`` is the origin of the ``template``, or ``None`` if ``template`` is the root template.`
     #: - ``template`` is the loaded template.
     #:   Additionally, the context with which ``template`` was rendered is stored on the ``RENDERED_CONTEXT_ATTR`` attribute.
-    load_history: List[Tuple[Optional[TemplateOrigin], jinja2.environment.Template]]
+    load_history: List[Tuple[jinja2.environment.Template, Optional[TemplateOrigin]]]
     insert_before: str
 
     def init(self, builder: sphinx.builders.Builder, *args: Any, **kwargs: Any) -> None:
-        self.insert_before = builder.config[JINJA_HAZMAT_INSERT_BEFORE]
+        self.insert_before = builder.config[JINJA_DETECTIVE_INSERT_BEFORE]
         return super().init(builder, *args, **kwargs)
 
-    def render(self, template: str, context: Any) -> str:
-        if template != JINJA_HAZMAT_TEMPLATE_NAME:
+    def render(self, template: str, context: Any) -> str:  # type: ignore
+        if template != JINJA_DETECTIVE_TEMPLATE_NAME:
             self.load_history = []
         ret = super().render(template, context)
-        if template == JINJA_HAZMAT_TEMPLATE_NAME:
+        if template == JINJA_DETECTIVE_TEMPLATE_NAME:
             return ret
         insert_idx = ret.find(self.insert_before)
         if insert_idx == -1:
-            logger.warning(f"{JINJA_HAZMAT_INSERT_BEFORE} ('{self.insert_before}') not found in template '{template}'.")
+            logger.warning(
+                f"{JINJA_DETECTIVE_INSERT_BEFORE} ('{self.insert_before}') not found in template '{template}'."
+            )
         else:
             self.environment.filters["resolvepath"] = lambda v: Path(v).resolve()
-            debug_toolbar_html = self.render(JINJA_HAZMAT_TEMPLATE_NAME, {"load_history": self.load_history})
+            debug_toolbar_html = self.render(
+                JINJA_DETECTIVE_TEMPLATE_NAME, {"load_history": self.load_history}
+            )
             ret = ret[:insert_idx] + debug_toolbar_html + ret[insert_idx:]
         return ret
 
-    def load(self, environment: jinja2.environment.Environment, name: str, globals: Any):
-        template = super().load(environment, name, globals=globals)
+    def load(
+        self,
+        environment: jinja2.environment.Environment,
+        name: str,
+        globals: Any = None,  # pylint: disable=redefined-builtin
+    ) -> jinja2.environment.Template:
+        template: jinja2.environment.Template = super().load(environment, name, globals=globals)
 
-        root_render_func_og = template.root_render_func
+        root_render_func_og = template.root_render_func  # type: ignore
         setattr(template, RENDERED_CONTEXT_ATTR, None)
 
         def root_render_func_patched(ctx: Any) -> Any:
             setattr(template, RENDERED_CONTEXT_ATTR, ctx)
             return root_render_func_og(ctx)
 
-        template.root_render_func = root_render_func_patched
+        template.root_render_func = root_render_func_patched  # type: ignore
 
         parent = None
         if self.load_history:
@@ -131,12 +141,13 @@ def find_parent_template() -> Optional[TemplateOrigin]:
     for frame, _lineno in itertools.islice(traceback.walk_stack(None), 10):
         co = frame.f_code
         path = Path(co.co_filename).resolve()
-        if path.suffix == ".html":
-            # This is definitely not public API!
+        try:
             template: jinja2.environment.Template = frame.f_globals["__jinja_template__"]
-            template_lineno = template.get_corresponding_lineno(frame.f_lineno)
-            line = get_line_from_file(path, template_lineno).strip()
-            return TemplateOrigin(path=path, name=template.name, lineno=template_lineno, line=line)
+        except KeyError:
+            continue
+        template_lineno: int = template.get_corresponding_lineno(frame.f_lineno)  # type: ignore
+        line = get_line_from_file(path, template_lineno).strip()
+        return TemplateOrigin(path=path, name=template.name or "NO NAME", lineno=template_lineno, line=line)
     return None
 
 

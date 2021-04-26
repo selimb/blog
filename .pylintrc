@@ -1,0 +1,42 @@
+[CLASSES]
+# Add 'setup' for pytest
+defining-attr-methods=__init__,__new__,setUp,setup
+
+[MESSAGES CONTROL]
+# Reasons for disabling:
+disable=
+    # This is way too restrictive (doesn't allow for data classes) and raises too many false positives.
+    # Design should be checked in code review.
+    design,
+    # We don't need docstrings for everything.
+    # Docstrings that ARE required should be flagged in code review.
+    missing-docstring,
+    # This is just ridiculous. Too restrictive. Sometimes there's nothing wrong with, for instance,
+    # a "for e in elements" if the contents of the loop span 2 lines.
+    invalid-name,
+    # See https://github.com/PyCQA/pylint/issues/1788
+    logging-format-interpolation, logging-fstring-interpolation,
+    # Checked by isort
+    wrong-import-order, wrong-import-position, ungrouped-imports,
+    # Checked by black
+    format,
+    # Meh
+    no-else-return, no-else-raise, no-else-break,
+    # Sometimes necessary because of type hints
+    cyclic-import,
+    # Too many false positives.
+    duplicate-code,
+    # Mypy is better at this. Pylint doesn't recognize user-defined generic classes
+    unsubscriptable-object,
+    # mypy already checks this
+    typecheck, no-name-in-module, import-error, arguments-differ, signature-differs
+
+[MISCELLANEOUS]
+# Default Pylint value, minus TODO.
+# TODO is sometimes useful to leave in for future readers.
+# Fail on others, so that they can be used to safely flag code reviewers, or just as a checklist while coding.
+notes=FIXME,XXX
+
+[REPORT]
+reports=no
+score=no
