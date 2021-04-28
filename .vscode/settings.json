@@ -4,5 +4,6 @@
     "python.linting.pylintEnabled": true,
     "restructuredtext.confPath": "${workspaceFolder}\\source",
     // For restructuredtext extension
-    "python.pythonPath": "${env:PYTHON}"
+    "python.pythonPath": "${env:PYTHON}",
+    "restructuredtext.linter.disabled": true
 }
